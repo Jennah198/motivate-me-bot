@@ -78,17 +78,3 @@ module.exports = {
   calculateProgress,
   getRandomQuote,
 }
-
-// --- TEMPORARY TEST EXECUTION ---
-// We will simulate a milestone where summer started on June 1st and ends on Sept 1st
-const testStart = '2026-06-01'
-const testEnd = '2026-09-01'
-
-const progressResult = calculateProgress(testStart, testEnd)
-const quote = getRandomQuote()
-
-console.log('=== UTILITIES INFRASTRUCTURE TEST ===')
-console.log(`Motivational Quote: "${quote}"`)
-console.log(`Timeline Status: ${progressResult.status.toUpperCase()}`)
-console.log(`Percentage Consumed: ${progressResult.percentage}%`)
-console.log('=====================================')
