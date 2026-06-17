@@ -1,3 +1,4 @@
+require('./cron') // Spines up the daily broadcast web listener alongside the bot
 const { Telegraf } = require('telegraf')
 const { saveUserDates, getUser } = require('./db')
 const { calculateProgress, getRandomQuote } = require('./utils')

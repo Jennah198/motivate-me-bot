@@ -1,9 +1,12 @@
 const { createClient } = require('@supabase/supabase-js')
 const { Telegraf } = require('telegraf')
 const { calculateProgress, getRandomQuote } = require('./utils')
+const express = require('express')
 require('dotenv').config()
 
-// Initialize both clients
+const app = express()
+const PORT = process.env.PORT || 3000
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY,
@@ -11,65 +14,43 @@ const supabase = createClient(
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 
 /**
- * Core Execution Engine: Fetches active users, computes metrics, and broadcasts messages.
+ * Core Execution Engine
  */
 async function runDailyBroadcast() {
-  console.log('Starting Daily Notification Engine broadcast loop...')
-
-  // 1. Fetch all active users from the cloud database
+  console.log('⏰ Starting Daily Notification Engine broadcast loop...')
   const { data: users, error } = await supabase
     .from('users')
     .select('*')
     .eq('is_active', true)
 
   if (error) {
-    console.error('Error fetching active records from database:', error.message)
-    return
+    console.error('❌ Database error:', error.message)
+    return false
   }
-
   if (!users || users.length === 0) {
-    console.log(
-      'Broadcast complete: Zero active user rows found in database queues.',
-    )
-    return
+    console.log('ℹ️ Zero active users found.')
+    return true
   }
 
-  console.log(
-    `Found ${users.length} active timelines to process. Distributing...`,
-  )
-
-  // 2. Iterate through users and dynamically send customized metrics
   for (const user of users) {
     const chatId = user.telegram_chat_id
-
-    // Evaluate metrics using our existing utility function
     const metrics = calculateProgress(user.start_date, user.end_date)
 
-    if (!metrics.success) {
-      console.warn(
-        ` Skipping User ${chatId} due to calculations error: ${metrics.error}`,
-      )
-      continue
-    }
+    if (!metrics.success) continue
 
-    // Check if their timeline has officially concluded today
     if (metrics.status === 'completed') {
       await bot.telegram.sendMessage(
         chatId,
-        '*Congratulations!* You have officially reached the end date of your milestone tracking window. Exceptional work sticking through it!',
+        '🏁 *Congratulations!* You have officially reached the end date of your milestone tracking window. Exceptional work!',
         { parse_mode: 'Markdown' },
       )
-
-      // Flip their status in the database to false so we don't spam them tomorrow
       await supabase
         .from('users')
         .update({ is_active: false })
         .eq('telegram_chat_id', chatId)
-      console.log(`User ${chatId} timeline completed. Marked inactive.`)
       continue
     }
 
-    // Build the dynamic motivation packet text string
     const motivationQuote = getRandomQuote()
     const dynamicMessage =
       `☀️ *Your Morning Fuel Call* ☀️\n\n` +
@@ -77,23 +58,35 @@ async function runDailyBroadcast() {
       `🔥 You have used *${metrics.percentage}%* of your milestone timeline! Keep hitting it hard today!`
 
     try {
-      // Direct API transmission via chat ID
       await bot.telegram.sendMessage(chatId, dynamicMessage, {
         parse_mode: 'Markdown',
       })
-      console.log(
-        `Successfully dispatched morning broadcast to user ID: ${chatId}`,
-      )
-    } catch (sendError) {
-      console.error(
-        `Failed to send message to user ${chatId}:`,
-        sendError.message,
-      )
+    } catch (err) {
+      console.error(`Failed sending to ${chatId}:`, err.message)
     }
   }
-
-  console.log('All scheduled active broadcasts executed successfully.')
+  return true
 }
 
-// Immediately invoke the function if this file is executed directly
-runDailyBroadcast()
+// 🌐 Expose a secure web endpoint
+app.get('/trigger-broadcast', async (req, res) => {
+  const secretToken = req.query.token
+
+  // Security barrier: verification check
+  if (!secretToken || secretToken !== process.env.CRON_SECRET_TOKEN) {
+    console.warn('⚠️ Unauthorized access attempt to cron trigger endpoint!')
+    return res.status(403).send('Forbidden: Invalid Token')
+  }
+
+  const success = await runDailyBroadcast()
+  if (success) {
+    res.status(200).send('Broadcast fired successfully!')
+  } else {
+    res.status(500).send('Internal engine failure during broadcast.')
+  }
+})
+
+// Start listening on Render's assigned port
+app.listen(PORT, () => {
+  console.log(`📡 Cron Web Server listening on port ${PORT}`)
+})
